@@ -1,7 +1,14 @@
 from fastapi import FastAPI, Path, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from typing import List
+from datetime import datetime
 import random
+import logging
+
+# 設定 logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -14,43 +21,160 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 選手列表
 players = [
-    {"name": "黑桃K", "level": 10},
-    {"name": "同花順", "level": 7},
-    {"name": "Full House", "level": 7},
-    {"name": "砲灰", "level": 4},
+    {"name": "黑桃K", "level": 10, "games": 0, "match_time": None},
+    {"name": "同花順", "level": 7, "games": 1, "match_time": None},
+    {"name": "Full House", "level": 7, "games": 0, "match_time": None},
+    {"name": "砲灰", "level": 4, "games": 0, "match_time": None},
 ]
 
+playersinmatch = []
+
+# 取得選手列表
+@app.get("/get_players", response_model=dict)
+async def get_players():
+    return {"players": players}
+
+# 新增選手
+@app.post("/add_player", response_model=dict)
+async def add_player(player: dict):
+    new_player = {
+        "name": player["name"],
+        "level": player["level"],
+        "games": 0
+    }
+    players.append(new_player)
+    return {"player": new_player}
+
+# 刪除選手
+@app.post("/remove_players", response_model=dict)
+async def remove_players(selected_players: dict):
+    selected_players_list = selected_players.get("selected_players", [])
+
+    if not selected_players_list:
+        raise HTTPException(status_code=400, detail="請提供要刪除的選手列表")
+
+    removed_players = []
+    for player_name in selected_players_list:
+        removed_player = next((player for player in players if player["name"] == player_name), None)
+        if removed_player:
+            removed_players.append(removed_player)
+        players[:] = [player for player in players if player["name"] != player_name]
+
+    remaining_players = [player for player in players if player["name"] not in selected_players_list]
+
+    return {"message": "選手已成功刪除", "removed_players": removed_players, "remaining_players": remaining_players}
+
+
 # 排點路由
-@app.get("/generate_schedule/{selected_players}")
-def generate_schedule(selected_players: str = Path(..., title="Selected Players")):
+@app.post("/generate_schedule")
+def generate_schedule(request_data: dict):
     try:
-        # 將字串轉換為選手名字的列表
-        selected_players_list = selected_players.split(',')
-
+        logging.debug(players)
+        selected_players = request_data.get("selected_players", [])
+        schedule = request_data.get("existed_schedule", [])
+        logging.info(schedule)
         # 檢查選手數量是否為偶數，因為雙打比賽需要兩個人一組
-        if len(selected_players_list) % 2 != 0:
+        if len(selected_players) % 2 != 0:
             raise HTTPException(status_code=400, detail="選手數量必須為偶數")
-
+        
         # 隨機排序選手
-        random.shuffle(selected_players_list)
+        random.shuffle(selected_players)
 
-        # 生成對戰組合
-        schedule = []
-        for i in range(0, len(selected_players_list), 4):
-            team1 = [{"name": name, "level": get_player_level(name)} for name in selected_players_list[i:i+2]]
-            team2 = [{"name": name, "level": get_player_level(name)} for name in selected_players_list[i+2:i+4]]
+        # 加入playersinmatch
+        for player in players:
+            if player["name"] in selected_players:
+                playersinmatch.append(player)
+        # 移除player
+        index = 0
+        while index < len(players):
+            if players[index]["name"] in selected_players:
+                # 如果是偶數，刪除該元素
+                del players[index]
+            else:
+                index += 1
+        for i in range(0, len(selected_players), 4):
+            team1 = [
+                {
+                    "name": name,
+                    "level": update_player_info(name)["level"],
+                    "games": update_player_info(name)["games"],
+                }
+                for name in selected_players[i : i + 2]
+            ]
+            team2 = [
+                {
+                    "name": name,
+                    "level": update_player_info(name)["level"],
+                    "games": update_player_info(name)["games"],
+                }
+                for name in selected_players[i + 2 : i + 4]
+            ]
             match = {"team1": team1, "team2": team2}
             schedule.append(match)
-
-        return {"schedule": schedule}
+        logging.debug(playersinmatch)
+        # 找出進入排點結果的選手
+        selected_players_info = [player for player in playersinmatch if player["name"] in selected_players]
+        return {"schedule": schedule, "selected_players": selected_players_info}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def get_player_level(player_name: str) -> int:
-    # 根據選手名字在 players 列表中找到對應的級數
-    for player in players:
+def update_player_info(player_name: str):
+    for player in playersinmatch:
         if player["name"] == player_name:
-            return player["level"]
-    return 1  # 如果找不到，默認級數為 1
+            return {"level": player["level"], "games": player["games"]}
+    return {"level": 1, "games": 1}
+
+@app.post("/complete_match")
+def complete_match(request_data: dict):
+    try:
+        logging.debug(playersinmatch)
+        selected_matches = request_data.get("selected_matches", [])
+        # 加入players
+        current_time = datetime.now()
+        for player in playersinmatch:
+            for matches in selected_matches:
+                logging.debug(f"matches{matches}")
+                if player["name"] in matches:
+                    player["match_time"] = current_time
+                    player["games"]+=1
+                    players.append(player)
+        # 移除playersinmatch
+        index = 0
+        while index < len(playersinmatch):
+            for matches in selected_matches:
+                if playersinmatch[index]["name"] in matches:
+                    # 如果是偶數，刪除該元素
+                    del playersinmatch[index]
+                else:
+                    index += 1
+        logging.debug(players)
+        return {"message": "比賽已完成"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cancel_match")
+def complete_match(request_data: dict):
+    try:
+        logging.debug(playersinmatch)
+        selected_matches = request_data.get("selected_matches", [])
+        # 加入players
+        for player in playersinmatch:
+            for matches in selected_matches:
+                logging.debug(f"matches{matches}")
+                if player["name"] in matches:
+                    players.append(player)
+        # 移除playersinmatch
+        index = 0
+        while index < len(playersinmatch):
+            for matches in selected_matches:
+                if playersinmatch[index]["name"] in matches:
+                    # 如果是偶數，刪除該元素
+                    del playersinmatch[index]
+                else:
+                    index += 1
+        logging.debug(players)
+        return {"message": "比賽已完成"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
