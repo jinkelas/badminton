@@ -73,6 +73,7 @@ def generate_schedule(request_data: dict):
         logging.debug(players)
         selected_players = request_data.get("selected_players", [])
         schedule = request_data.get("existed_schedule", [])
+        num_courts = int(request_data.get("num_courts", 1))
         logging.info(schedule)
         # 檢查選手數量是否為偶數，因為雙打比賽需要兩個人一組
         if len(selected_players) % 2 != 0:
@@ -93,14 +94,14 @@ def generate_schedule(request_data: dict):
                 del players[index]
             else:
                 index += 1
-        for i in range(0, len(selected_players), 4):
+        for i in range(num_courts):
             team1 = [
                 {
                     "name": name,
                     "level": update_player_info(name)["level"],
                     "games": update_player_info(name)["games"],
                 }
-                for name in selected_players[i : i + 2]
+                for name in selected_players[i * 4 : i * 4 + 2]
             ]
             team2 = [
                 {
@@ -108,16 +109,19 @@ def generate_schedule(request_data: dict):
                     "level": update_player_info(name)["level"],
                     "games": update_player_info(name)["games"],
                 }
-                for name in selected_players[i + 2 : i + 4]
+                for name in selected_players[i * 4 + 2 : i * 4 + 4]
             ]
             match = {"team1": team1, "team2": team2}
             schedule.append(match)
         logging.debug(playersinmatch)
+        logging.debug(match)
         # 找出進入排點結果的選手
         selected_players_info = [player for player in playersinmatch if player["name"] in selected_players]
         return {"schedule": schedule, "selected_players": selected_players_info}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in generate_schedule: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 def update_player_info(player_name: str):
     for player in playersinmatch:
@@ -149,7 +153,7 @@ def complete_match(request_data: dict):
                 else:
                     index += 1
         logging.debug(players)
-        return {"message": "比賽已完成"}
+        return {"players": players}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
