@@ -16,7 +16,7 @@ pkgs.mkShell {
     # Enter frontend directory
     cd $PWD/frontend
     # Install frontend dependencies
-    yarn install
+    npm install
 
     # Enter backen directory
     cd $PWD/server
