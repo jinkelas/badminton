@@ -74,7 +74,7 @@ def generate_schedule(request_data: dict):
         selected_players = request_data.get("selected_players", [])
         schedule = request_data.get("existed_schedule", [])
         num_courts = int(request_data.get("num_courts", 1))
-        logging.info(schedule)
+        logging.info(f"schedule:{schedule}")
         # 檢查選手數量是否為偶數，因為雙打比賽需要兩個人一組
         if len(selected_players) % 2 != 0:
             raise HTTPException(status_code=400, detail="選手數量必須為偶數")
@@ -94,7 +94,8 @@ def generate_schedule(request_data: dict):
                 del players[index]
             else:
                 index += 1
-        for i in range(num_courts):
+        loops = num_courts - len(schedule)
+        for i in range(loops):
             team1 = [
                 {
                     "name": name,
