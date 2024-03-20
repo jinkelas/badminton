@@ -5,6 +5,7 @@ from typing import List
 from datetime import datetime
 import random
 import logging
+import os 
 
 # 設定 logging
 logging.basicConfig(level=logging.DEBUG)
@@ -29,6 +30,11 @@ players = [
 ]
 
 playersinmatch = []
+
+@app.get("/")
+def read_root():
+    port = int(os.environ.get("PORT", 8000))
+    return {"message": "Hello, world!", "port": port}
 
 # 取得選手列表
 @app.get("/get_players", response_model=dict)
